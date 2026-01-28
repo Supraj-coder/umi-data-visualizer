@@ -10,7 +10,7 @@ from imagecodecs.numcodecs import register_codecs
 from pydantic.dataclasses import dataclass
 from pydantic import ConfigDict
 
-register_codecs()
+
 
 @dataclass
 class VisConfig:
@@ -18,7 +18,7 @@ class VisConfig:
     episode_id: int
     trajectory_color: Tuple[int,int,int] = (100,149,237)
     gripper_color: Tuple[int,int,int] = (255,165,0)
-
+    
 @dataclass(config=ConfigDict(arbitrary_types_allowed=True, frozen=True))
 class UMIFrame:
     image: np.ndarray
@@ -26,6 +26,15 @@ class UMIFrame:
     eef_rot: np.ndarray
     gripper_width: float
     index: int
+    def __post_init__(self):
+        if self.eef_pos.shape != (3,):
+            raise ValueError(f"Frame {self.index}: eef_pos must be shape (3,), got {self.eef_pos.shape}")
+        
+        if self.eef_rot.shape != (3,):
+            raise ValueError(f"Frame {self.index}: eef_rot must be shape (3,), got {self.eef_rot.shape}")
+        
+        if self.image.size == 0:
+            raise ValueError(f"Frame {self.index}: Image data is empty.")
 
 def stream_to_rerun(frame: UMIFrame, config: VisConfig, trajectory: List[np.ndarray]) -> None:
     rr.set_time_sequence(timeline="frame_ids", sequence=frame.index)
@@ -60,38 +69,38 @@ def stream_to_rerun(frame: UMIFrame, config: VisConfig, trajectory: List[np.ndar
     rr.log("world/robot/gripper_width", rr.Scalar(frame.gripper_width))
 
 def run_visualizer(config: VisConfig) -> None:
-	if not config.zarr_path.exists():
-		print("Path does not exists.")
-		sys.exit(1)
-	try:
-		with zarr.open(str(config.zarr_path), 'r') as root:
-			print("Number of episodes in the dataset(s):",len(root["meta/episode_ends"]))
-			ends = root["meta/episode_ends"][:]
-			start_id = 0 if config.episode_id == 0 else int(ends[config.episode_id - 1])
-			end_id = int(ends[config.episode_id])
-			rr.init("UMI_Full_Visualizer", spawn=True)
-			rr.log("world", rr.ViewCoordinates.RIGHT_HAND_Z_UP, static=True)
-			img_stream = itertools.islice(root["data/camera0_rgb"], start_id, end_id)
-			pos_arr = root["data/robot0_eef_pos"][start_id:end_id]
-			rot_arr = root["data/robot0_eef_rot_axis_angle"][start_id:end_id]
-			grp_arr = root["data/robot0_gripper_width"][start_id:end_id]
-			trajectory: List[np.ndarray] = []
-			for i, img in enumerate(img_stream):
-				if img is None or img.size == 0:
-					print(f"Skipping frame {i}: Image data is empty.")
-					continue
-				try:
-					frame = UMIFrame(img, pos_arr[start_id+i], rot_arr[start_id+i], float(grp_arr[start_id+i][0]), i)
-				except Exception as e:
-					print(f"Error processing frame {i}: {e}")
-					break
-				stream_to_rerun(frame, config, trajectory)
-	except Exception as e:
-		print(e)
-		sys.exit(1)
+    print("debug test")
+    if (not config.zarr_path.exists()):
+        print("Path does not exists.")
+        sys.exit(1)
+    elif Path(str(config.zarr_path)+"/dataset.zarr").exists():
+        config.zarr_path = Path(str(config.zarr_path)+"/dataset.zarr")
+    elif Path(str(config.zarr_path)+"dataset.zarr").exists():
+        config.zarr_path = Path(str(config.zarr_path)+"dataset.zarr")
+    with zarr.open(str(config.zarr_path), 'r') as root:
+        print("Number of episodes in the dataset(s):",len(root["meta/episode_ends"]))
+        ends = root["meta/episode_ends"][:]
+        start_id = 0 if config.episode_id == 0 else int(ends[config.episode_id - 1])
+        end_id = int(ends[config.episode_id])
+        rr.init("UMI_Full_Visualizer", spawn=True)
+        rr.log("world", rr.ViewCoordinates.RIGHT_HAND_Z_UP, static=True)
+        img_stream = itertools.islice(root["data/camera0_rgb"], start_id, end_id)
+        pos_arr = root["data/robot0_eef_pos"][start_id:end_id]
+        rot_arr = root["data/robot0_eef_rot_axis_angle"][start_id:end_id]
+        grp_arr = root["data/robot0_gripper_width"][start_id:end_id]
+        trajectory: List[np.ndarray] = []
+        for i, img in enumerate(img_stream):
+            if img is None or img.size == 0:
+                print(f"Skipping frame {i}: Image data is empty.")
+                continue
+            frame = UMIFrame(img, pos_arr[start_id+i], rot_arr[start_id+i], float(grp_arr[start_id+i][0]), i)
+            stream_to_rerun(frame, config, trajectory)
+
 
 
 def main() -> None:
+    
+    register_codecs()
     parser = argparse.ArgumentParser()
     parser.add_argument("path", type=lambda p: Path(p).expanduser().resolve())
     parser.add_argument("--episode", type=int, default=1)
