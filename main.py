@@ -94,7 +94,7 @@ def run_visualizer(config: VisConfig) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("path", type=lambda p: Path(p).expanduser().resolve())
-    parser.add_argument("--episode", type=int, default=0)
+    parser.add_argument("--episode", type=int, default=1)
     args = parser.parse_args()
     run_visualizer(VisConfig(zarr_path=args.path, episode_id=args.episode-1))
 
